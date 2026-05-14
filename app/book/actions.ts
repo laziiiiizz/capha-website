@@ -72,7 +72,8 @@ export async function bookAppointment(data: BookingPayload) {
     .from("team_members")
     .select("name, email, role")
     .eq("id", data.advisorId)
-    .in("category", ["advisor", "academic-director"])
+    .not("calendly_url", "is", null)
+    .neq("calendly_url", "")
     .maybeSingle();
 
   if (!advisor) throw new Error("Invalid advisor selected.");

@@ -140,7 +140,8 @@ export default function BookPage() {
       supabase
         .from("team_members")
         .select("id, name, role, bio, photo_url")
-        .in("category", ["advisor", "academic-director"])
+        .not("calendly_url", "is", null)
+        .neq("calendly_url", "")
         .order("display_order"),
     ]).then(([{ data: dates }, { data: slots }, { data: members }]) => {
       setBlockedDates((dates ?? []).map((d) => d.blocked_date));

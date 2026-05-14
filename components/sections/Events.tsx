@@ -35,13 +35,6 @@ const DEFAULT_ZOOM: DbEvent = {
   type: "zoom",
 };
 
-const DEFAULT_ADVISORS: Advisor[] = [
-  { id: "1", name: "Malika Alamova", role: "Pre-Med Advisor" },
-  { id: "2", name: "Sabina Alamova", role: "Pre-PA Advisor" },
-  { id: "3", name: "Mokhinur Sobirova", role: "Pre-Optometry Advisor" },
-  { id: "4", name: "Sabrina Muradova", role: "Pre-Dental Advisor" },
-  { id: "5", name: "Anvarjon Nematov", role: "Academic Director" },
-];
 
 const DEFAULT_INTRO =
   "Stay connected with CAPHA! Join our upcoming virtual events, workshops, and mentorship sessions to grow your pre-health journey.";
@@ -65,7 +58,7 @@ const fadeUp: Variants = {
 
 export default function Events() {
   const [zoomEvent, setZoomEvent] = useState<DbEvent>(DEFAULT_ZOOM);
-  const [advisors, setAdvisors] = useState<Advisor[]>(DEFAULT_ADVISORS);
+  const [advisors, setAdvisors] = useState<Advisor[]>([]);
   const [intro, setIntro] = useState(DEFAULT_INTRO);
 
   useEffect(() => {
@@ -84,9 +77,10 @@ export default function Events() {
     supabase
       .from("team_members")
       .select("id, name, role")
-      .in("category", ["advisor", "academic-director"])
+      .not("calendly_url", "is", null)
+      .neq("calendly_url", "")
       .order("display_order")
-      .then(({ data }) => { if (data?.length) setAdvisors(data); });
+      .then(({ data }) => { setAdvisors(data ?? []); });
 
     supabase
       .from("site_content")
@@ -231,20 +225,26 @@ export default function Events() {
                 in a different healthcare track.
               </p>
 
-              {advisors.map((mentor) => (
-                <div
-                  key={mentor.id}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-capha-blue/10"
-                >
-                  <div className="w-9 h-9 rounded-full bg-capha-navy flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xs font-bold">{initials(mentor.name)}</span>
+              {advisors.length === 0 ? (
+                <p className="text-capha-dark/40 text-sm text-center py-2">
+                  Advisors coming soon — check back shortly.
+                </p>
+              ) : (
+                advisors.map((mentor) => (
+                  <div
+                    key={mentor.id}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-capha-blue/10"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-capha-navy flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-xs font-bold">{initials(mentor.name)}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-capha-navy font-semibold text-sm leading-tight">{mentor.name}</p>
+                      <p className="text-capha-dark/50 text-xs mt-0.5">{mentor.role}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-capha-navy font-semibold text-sm leading-tight">{mentor.name}</p>
-                    <p className="text-capha-dark/50 text-xs mt-0.5">{mentor.role}</p>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
 
               <a
                 href="/book"
