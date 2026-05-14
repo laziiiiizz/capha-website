@@ -141,7 +141,6 @@ export default function BookPage() {
         .from("team_members")
         .select("id, name, role, bio, photo_url")
         .in("category", ["advisor", "academic-director"])
-        .neq("email", "")
         .order("display_order"),
     ]).then(([{ data: dates }, { data: slots }, { data: members }]) => {
       setBlockedDates((dates ?? []).map((d) => d.blocked_date));
@@ -155,6 +154,7 @@ export default function BookPage() {
           photo: m.photo_url || "",
         }))
       );
+      setAdvisorsLoading(false);
     });
   }, []);
 
@@ -347,9 +347,14 @@ export default function BookPage() {
               </p>
 
               <div className="space-y-3">
-                {advisors.length === 0 && (
+                {advisorsLoading && (
                   <p className="text-capha-dark/40 text-sm py-6 text-center">
                     Loading advisors...
+                  </p>
+                )}
+                {!advisorsLoading && advisors.length === 0 && (
+                  <p className="text-capha-dark/40 text-sm py-6 text-center">
+                    No advisors available right now. Please check back soon.
                   </p>
                 )}
                 {advisors.map((a) => (
