@@ -123,6 +123,7 @@ export default function BookPage() {
   const [blockedDates, setBlockedDates] = useState<string[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<string[]>([]);
   const [advisors, setAdvisors] = useState<Advisor[]>([]);
+  const [advisorsLoading, setAdvisorsLoading] = useState(true);
 
   // Custom calendar state
   const [calOpen, setCalOpen] = useState(false);
