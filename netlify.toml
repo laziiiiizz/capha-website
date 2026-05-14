@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  # NEXT_PUBLIC_* vars are intentionally embedded in client bundles by Next.js — not secrets.
+  # EMAIL_USER is the public CAPHA contact email shown on the website — not a credential.
+  # EMAIL_PASS (the actual SMTP password) is server-only and never appears in source/output.
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SITE_URL,EMAIL_USER"
+  # supabase/ contains SQL seed files with placeholder data, not deployed application code.
+  SECRETS_SCAN_OMIT_PATHS = "supabase/"
