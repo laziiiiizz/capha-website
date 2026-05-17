@@ -22,7 +22,6 @@ type Member = {
   bio: string;
   email: string;
   photo_url: string;
-  calendly_url: string;
   display_order: number;
 };
 
@@ -33,7 +32,6 @@ const emptyMember: Member = {
   bio: "",
   email: "",
   photo_url: "",
-  calendly_url: "",
   display_order: 0,
 };
 
@@ -312,15 +310,6 @@ export default function TeamAdmin() {
                   onChange={(e) => setEditing({ ...editing, email: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-xl border border-capha-blue/20 focus:outline-none focus:ring-2 focus:ring-capha-blue/30 text-sm"
                   placeholder="email@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-capha-navy mb-1">Calendly URL</label>
-                <input
-                  value={editing.calendly_url}
-                  onChange={(e) => setEditing({ ...editing, calendly_url: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl border border-capha-blue/20 focus:outline-none focus:ring-2 focus:ring-capha-blue/30 text-sm"
-                  placeholder="https://calendly.com/..."
                 />
               </div>
             </div>

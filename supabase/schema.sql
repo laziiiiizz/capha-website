@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS team_members (
   bio TEXT DEFAULT '',
   email TEXT DEFAULT '',
   photo_url TEXT DEFAULT '',
-  calendly_url TEXT DEFAULT '',
+  booking_eligible BOOLEAN DEFAULT FALSE,
   display_order INT DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -106,5 +106,5 @@ INSERT INTO events (title, date, time, description, zoom_link, meeting_id, type)
    'https://syracuseuniversity.zoom.us/j/9663439551', '966 343 9551', 'zoom'),
   ('CAPHA Mentorship', 'Ongoing', 'One-on-One',
    'Receive one-on-one academic and career guidance from experienced healthcare students and professionals.',
-   'https://calendly.com/anvarnematov234/capha-office-hours', '', 'mentorship')
+   '', '', 'mentorship')
 ON CONFLICT DO NOTHING;

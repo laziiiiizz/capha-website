@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, CalendarDays } from "lucide-react";
+import { Mail } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
 type Member = {
@@ -14,7 +14,6 @@ type Member = {
   photo_url: string;
   bio: string;
   email: string;
-  calendly_url: string;
   display_order: number;
 };
 
@@ -72,18 +71,6 @@ function MemberCard({ member }: { member: Member }) {
                   >
                     <Mail size={11} />
                     <span className="truncate">{member.email}</span>
-                  </a>
-                )}
-                {member.calendly_url && (
-                  <a
-                    href={member.calendly_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="inline-flex items-center gap-1.5 text-[11px] bg-white text-capha-navy font-bold px-3 py-1.5 rounded-lg w-fit hover:bg-capha-sky transition-colors"
-                  >
-                    <CalendarDays size={11} />
-                    Book a slot
                   </a>
                 )}
               </div>

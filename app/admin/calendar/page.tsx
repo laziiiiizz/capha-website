@@ -4,14 +4,14 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
-  Ban, Trash2, Calendar, Clock, Link2, Save, Loader2, XCircle, CheckCircle2,
+  Ban, Trash2, Calendar, Clock, ToggleLeft, ToggleRight, Loader2, XCircle, CheckCircle2,
 } from "lucide-react";
 
 type Member = {
   id: string;
   name: string;
   role: string;
-  calendly_url: string;
+  booking_eligible: boolean;
 };
 
 type BlockedDate = { id: string; blocked_date: string; reason: string | null };
@@ -36,9 +36,7 @@ const ALL_SLOTS = [
 export default function AdminCalendar() {
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [urlInput, setUrlInput] = useState("");
-  const [savingUrl, setSavingUrl] = useState(false);
-  const [removingUrl, setRemovingUrl] = useState(false);
+  const [togglingEligibility, setTogglingEligibility] = useState(false);
 
   const [confirmedBookings, setConfirmedBookings] = useState<Booking[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
@@ -54,7 +52,7 @@ export default function AdminCalendar() {
 
   const fetchAll = useCallback(async () => {
     const [{ data: mData }, { data: bookings }, { data: dates }, { data: slots }] = await Promise.all([
-      supabase.from("team_members").select("id,name,role,calendly_url").order("display_order"),
+      supabase.from("team_members").select("id,name,role,booking_eligible").order("display_order"),
       supabase.from("bookings").select("id,advisor_name,student_name,booking_date,booking_time,status").eq("status", "confirmed").order("booking_date"),
       supabase.from("blocked_dates").select("*").order("blocked_date"),
       supabase.from("blocked_slots").select("time_slot"),
@@ -72,34 +70,23 @@ export default function AdminCalendar() {
 
   const handleSelect = (id: string) => {
     setSelectedId(id);
-    const m = members.find((m) => m.id === id);
-    setUrlInput(m?.calendly_url ?? "");
   };
 
-  const saveUrl = async () => {
-    if (!selectedId) return;
-    if (!urlInput.trim()) { toast.error("Please enter a Calendly URL."); return; }
-    setSavingUrl(true);
-    const { error } = await supabase
-      .from("team_members")
-      .update({ calendly_url: urlInput.trim() })
-      .eq("id", selectedId);
-    if (error) toast.error("Failed to save URL.");
-    else { toast.success(`${selected?.name} is now accepting bookings.`); fetchAll(); }
-    setSavingUrl(false);
-  };
-
-  const removeEligibility = async () => {
+  const toggleEligibility = async () => {
     if (!selectedId || !selected) return;
-    if (!confirm(`Remove ${selected.name} from booking eligibility? Their Calendly link will be cleared.`)) return;
-    setRemovingUrl(true);
+    const enabling = !selected.booking_eligible;
+    if (!enabling && !confirm(`Remove ${selected.name} from booking eligibility?`)) return;
+    setTogglingEligibility(true);
     const { error } = await supabase
       .from("team_members")
-      .update({ calendly_url: "" })
+      .update({ booking_eligible: enabling })
       .eq("id", selectedId);
-    if (error) toast.error("Failed to remove.");
-    else { toast.success(`${selected.name} removed from bookings.`); setUrlInput(""); fetchAll(); }
-    setRemovingUrl(false);
+    if (error) toast.error("Failed to update eligibility.");
+    else {
+      toast.success(enabling ? `${selected.name} is now accepting bookings.` : `${selected.name} removed from bookings.`);
+      fetchAll();
+    }
+    setTogglingEligibility(false);
   };
 
   const blockDate = async () => {
@@ -164,11 +151,11 @@ export default function AdminCalendar() {
       <div className="bg-white rounded-2xl border border-capha-blue/10 shadow-sm mb-6">
         <div className="px-6 py-4 border-b border-capha-blue/10 bg-capha-light/50">
           <h2 className="text-capha-navy font-bold flex items-center gap-2">
-            <Link2 size={17} className="text-capha-blue" />
+            <ToggleRight size={17} className="text-capha-blue" />
             Member Booking Eligibility
           </h2>
           <p className="text-capha-dark/50 text-xs mt-0.5">
-            Select a member to set or update their Calendly booking link.
+            Select a member to enable or disable their ability to receive booking requests.
           </p>
         </div>
 
@@ -194,12 +181,12 @@ export default function AdminCalendar() {
                 <option value="">— Choose a member —</option>
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} — {m.role}{m.calendly_url ? " ✓" : ""}
+                    {m.name} — {m.role}{m.booking_eligible ? " ✓" : ""}
                   </option>
                 ))}
               </select>
             )}
-            <p className="text-capha-dark/35 text-xs mt-1.5">Members with ✓ already have a Calendly link set.</p>
+            <p className="text-capha-dark/35 text-xs mt-1.5">Members marked with ✓ are currently accepting bookings.</p>
           </div>
 
           {/* Selected member panel */}
@@ -216,60 +203,54 @@ export default function AdminCalendar() {
                   </div>
                 </div>
                 <span className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
-                  selected.calendly_url
+                  selected.booking_eligible
                     ? "text-emerald-600 bg-emerald-50 border border-emerald-200"
                     : "text-capha-dark/40 bg-gray-100 border border-gray-200"
                 }`}>
-                  {selected.calendly_url
-                    ? <><CheckCircle2 size={11} /> Eligible</>
-                    : <><XCircle size={11} /> Not eligible</>
+                  {selected.booking_eligible
+                    ? <><CheckCircle2 size={11} /> Accepting Bookings</>
+                    : <><XCircle size={11} /> Not Accepting</>
                   }
                 </span>
               </div>
 
-              <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-white border border-capha-blue/10 rounded-xl">
                 <div>
-                  <label htmlFor="calendar-calendly-url" className="block text-xs font-semibold text-capha-navy mb-1.5">Calendly URL</label>
-                  <input
-                    id="calendar-calendly-url"
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="https://calendly.com/their-username"
-                    className="w-full px-3 py-2.5 rounded-xl border border-capha-blue/20 focus:outline-none focus:ring-2 focus:ring-capha-blue/30 text-sm"
-                  />
+                  <p className="text-capha-navy font-semibold text-sm">Booking Status</p>
+                  <p className="text-capha-dark/50 text-xs mt-0.5">
+                    {selected.booking_eligible
+                      ? "Students can currently request sessions with this member."
+                      : "This member will not appear in the booking flow."}
+                  </p>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={saveUrl}
-                    disabled={savingUrl}
-                    className="flex items-center gap-1.5 bg-capha-navy text-white font-semibold px-4 py-2 rounded-xl hover:bg-capha-blue transition-colors disabled:opacity-60 text-sm"
-                  >
-                    {savingUrl ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                    {savingUrl ? "Saving…" : "Save Link"}
-                  </button>
-                  {selected.calendly_url && (
-                    <button
-                      onClick={removeEligibility}
-                      disabled={removingUrl}
-                      className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 font-semibold px-4 py-2 rounded-xl hover:bg-red-100 transition-colors disabled:opacity-60 text-sm"
-                    >
-                      {removingUrl ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
-                      Remove Eligibility
-                    </button>
-                  )}
-                </div>
+                <button
+                  onClick={toggleEligibility}
+                  disabled={togglingEligibility}
+                  className={`flex items-center gap-1.5 font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-60 text-sm ${
+                    selected.booking_eligible
+                      ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+                      : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                  }`}
+                >
+                  {togglingEligibility
+                    ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+                    : selected.booking_eligible
+                      ? <><ToggleLeft size={16} /> Disable</>
+                      : <><ToggleRight size={16} /> Enable</>
+                  }
+                </button>
               </div>
             </div>
           )}
 
           {/* Eligible members summary */}
-          {!loading && members.some((m) => m.calendly_url) && (
+          {!loading && members.some((m) => m.booking_eligible) && (
             <div>
               <p className="text-xs font-semibold text-capha-dark/40 uppercase tracking-wide mb-2">
-                Currently Eligible ({members.filter((m) => m.calendly_url).length})
+                Accepting Bookings ({members.filter((m) => m.booking_eligible).length})
               </p>
               <div className="flex flex-wrap gap-2">
-                {members.filter((m) => m.calendly_url).map((m) => (
+                {members.filter((m) => m.booking_eligible).map((m) => (
                   <button
                     key={m.id}
                     onClick={() => handleSelect(m.id)}

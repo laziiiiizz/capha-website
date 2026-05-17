@@ -6,7 +6,7 @@ import { useDropzone } from "react-dropzone";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
-  Plus, Pencil, Trash2, Upload, X, Save, Loader2, Users, Mail, Link2,
+  Plus, Pencil, Trash2, Upload, X, Save, Loader2, Users, Mail,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -18,7 +18,6 @@ type Member = {
   bio: string;
   email: string;
   photo_url: string;
-  calendly_url: string;
   display_order: number;
 };
 
@@ -46,7 +45,7 @@ export default function MemberManager({
 }: Props) {
   const emptyMember: Member = {
     name: "", role: "", category: defaultCategory, bio: "",
-    email: "", photo_url: "", calendly_url: "", display_order: 0,
+    email: "", photo_url: "", display_order: 0,
   };
 
   const [members, setMembers] = useState<Member[]>([]);
@@ -97,10 +96,6 @@ export default function MemberManager({
   const handleSave = async () => {
     if (!editing.name.trim() || !editing.role.trim()) {
       toast.error("Name and role are required.");
-      return;
-    }
-    if (editing.calendly_url && !/^https:\/\/calendly\.com\//i.test(editing.calendly_url)) {
-      toast.error("Calendly URL must start with https://calendly.com/");
       return;
     }
     if (editing.photo_url && !/^(https?:\/\/|\/)/.test(editing.photo_url)) {
@@ -244,11 +239,6 @@ export default function MemberManager({
                         <Mail size={10} />{m.email}
                       </span>
                     )}
-                    {m.calendly_url && (
-                      <span className="text-capha-blue/60 text-xs flex items-center gap-1">
-                        <Link2 size={10} />Calendly linked
-                      </span>
-                    )}
                   </div>
                 </div>
 
@@ -379,16 +369,6 @@ export default function MemberManager({
                   onChange={(e) => setEditing({ ...editing, email: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-xl border border-capha-blue/20 focus:outline-none focus:ring-2 focus:ring-capha-blue/30 text-sm"
                   placeholder="email@example.com"
-                />
-              </div>
-              <div>
-                <label htmlFor="member-calendly" className="block text-sm font-semibold text-capha-navy mb-1">Calendly URL</label>
-                <input
-                  id="member-calendly"
-                  value={editing.calendly_url}
-                  onChange={(e) => setEditing({ ...editing, calendly_url: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl border border-capha-blue/20 focus:outline-none focus:ring-2 focus:ring-capha-blue/30 text-sm"
-                  placeholder="https://calendly.com/..."
                 />
               </div>
             </div>

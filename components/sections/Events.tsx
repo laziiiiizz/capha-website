@@ -77,8 +77,7 @@ export default function Events() {
     supabase
       .from("team_members")
       .select("id, name, role")
-      .not("calendly_url", "is", null)
-      .neq("calendly_url", "")
+      .eq("booking_eligible", true)
       .order("display_order")
       .then(({ data }) => { setAdvisors(data ?? []); });
 

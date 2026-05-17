@@ -24,6 +24,10 @@ function esc(s: string): string {
     .replace(/'/g, "&#x27;");
 }
 
+function sanitizeHeader(s: string): string {
+  return s.replace(/[\r\n\t]/g, " ").trim().slice(0, 200);
+}
+
 export interface BookingPayload {
   name: string;
   email: string;
@@ -39,8 +43,11 @@ export interface BookingPayload {
 
 export async function bookAppointment(data: BookingPayload) {
   // ── Rate limit: 3 submissions per IP per hour ─────────────────────────────
+  const hdrs = await headers();
   const ip =
-    (await headers()).get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+    hdrs.get("x-nf-client-connection-ip") ??
+    hdrs.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
+    "unknown";
   if (!checkRateLimit(`book:${ip}`, 3, 60 * 60 * 1000)) {
     throw new Error("Too many requests. Please try again later.");
   }
@@ -58,6 +65,9 @@ export async function bookAppointment(data: BookingPayload) {
   if (university.length < 2) throw new Error("University is required.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Invalid date.");
   if (!VALID_SLOTS.has(time)) throw new Error("Invalid time slot.");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.advisorId)) {
+    throw new Error("Invalid advisor.");
+  }
 
   const today = new Date().toISOString().split("T")[0];
   if (date < today) throw new Error("Date must be in the future.");
@@ -72,8 +82,7 @@ export async function bookAppointment(data: BookingPayload) {
     .from("team_members")
     .select("name, email, role")
     .eq("id", data.advisorId)
-    .not("calendly_url", "is", null)
-    .neq("calendly_url", "")
+    .eq("booking_eligible", true)
     .maybeSingle();
 
   if (!advisor) throw new Error("Invalid advisor selected.");
@@ -83,7 +92,7 @@ export async function bookAppointment(data: BookingPayload) {
   const advisorRole = advisor.role;
 
   // ── Save booking to database ──────────────────────────────────────────────
-  await supabase.from("bookings").insert({
+  const { error: insertError } = await supabase.from("bookings").insert({
     student_name: studentName,
     student_email: studentEmail,
     university,
@@ -96,6 +105,7 @@ export async function bookAppointment(data: BookingPayload) {
     booking_time: time,
     status: "pending",
   });
+  if (insertError) throw new Error("Failed to save booking. Please try again.");
 
   // ── Send email notifications ──────────────────────────────────────────────
   const transporter = nodemailer.createTransport({
@@ -106,70 +116,155 @@ export async function bookAppointment(data: BookingPayload) {
     },
   });
 
-  const sharedDetails = `
-    <table style="width:100%;border-collapse:collapse;margin-top:12px;">
-      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;width:130px;">Advisor</td><td style="padding:8px 0;color:#0b3c5d;font-weight:600;font-size:14px;">${esc(advisorName)} — ${esc(advisorRole)}</td></tr>
-      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Date</td><td style="padding:8px 0;color:#0b3c5d;font-weight:600;font-size:14px;">${esc(date)}</td></tr>
-      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Time (EST)</td><td style="padding:8px 0;color:#0b3c5d;font-weight:600;font-size:14px;">${esc(time)}</td></tr>
-      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Student</td><td style="padding:8px 0;color:#0b3c5d;font-weight:600;font-size:14px;">${esc(studentName)}</td></tr>
-      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Student Email</td><td style="padding:8px 0;color:#0b3c5d;font-weight:600;font-size:14px;">${esc(studentEmail)}</td></tr>
-      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">University</td><td style="padding:8px 0;color:#0b3c5d;font-weight:600;font-size:14px;">${esc(university)}</td></tr>
-      ${note ? `<tr><td style="padding:8px 0;color:#6b7280;font-size:14px;vertical-align:top;">Note</td><td style="padding:8px 0;color:#0b3c5d;font-size:14px;">${esc(note)}</td></tr>` : ""}
-    </table>
-  `;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://capha.net";
 
-  const wrapper = (body: string) => `
-    <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;background:#f4f8fb;padding:32px 16px;">
-      <div style="background:#0b3c5d;border-radius:16px 16px 0 0;padding:24px 32px;display:flex;align-items:center;gap:12px;">
-        <span style="color:white;font-size:20px;font-weight:700;letter-spacing:-0.5px;">CAPHA</span>
-        <span style="color:rgba(255,255,255,0.4);font-size:14px;">Mentorship Program</span>
+  const wrapper = (accentColor: string, body: string) => `
+    <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background:#f1f5f9;padding:32px 16px;">
+      <div style="background:#0b3c5d;padding:26px 36px;border-radius:8px 8px 0 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+          <tr>
+            <td><img src="${siteUrl}/logo.jpeg" alt="CAPHA" style="height:40px;width:auto;display:block;" /></td>
+            <td align="right"><span style="color:rgba(255,255,255,0.45);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;">Mentorship Program</span></td>
+          </tr>
+        </table>
+        <div style="height:3px;background:${accentColor};margin-top:16px;border-radius:2px;"></div>
       </div>
-      <div style="background:white;border-radius:0 0 16px 16px;padding:32px;">
+      <div style="background:white;padding:36px;border-radius:0 0 8px 8px;border:1px solid #e2e8f0;border-top:none;">
         ${body}
       </div>
-      <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:20px;">
-        Central Asian Pre-Health Association · ${process.env.EMAIL_USER}
+      <p style="text-align:center;color:#94a3b8;font-size:12px;margin:20px 0 0;">
+        Central Asian Pre-Health Association &nbsp;&middot;&nbsp;
+        <a href="mailto:${process.env.EMAIL_USER}" style="color:#94a3b8;text-decoration:none;">${process.env.EMAIL_USER}</a>
       </p>
     </div>
   `;
 
-  // Notify advisor (only if they have an email on record)
+  const detailRow = (label: string, value: string, last = false) => `
+    <tr>
+      <td style="padding:10px 0;${last ? "" : "border-bottom:1px solid #f1f5f9;"}color:#64748b;font-size:13px;width:130px;vertical-align:top;">${label}</td>
+      <td style="padding:10px 0;${last ? "" : "border-bottom:1px solid #f1f5f9;"}color:#0b3c5d;font-size:14px;font-weight:600;vertical-align:top;">${value}</td>
+    </tr>
+  `;
+
+  const detailsBox = (rows: [string, string][]) => `
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 20px;margin:20px 0;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        ${rows.map(([l, v], i) => detailRow(l, v, i === rows.length - 1)).join("")}
+      </table>
+    </div>
+  `;
+
+  const studentRows: [string, string][] = [
+    ["Advisor", `${esc(advisorName)} &mdash; ${esc(advisorRole)}`],
+    ["Date", esc(date)],
+    ["Time (EST)", esc(time)],
+    ["University", esc(university)],
+    ...(note ? [["Note", esc(note)] as [string, string]] : []),
+  ];
+
+  const advisorRows: [string, string][] = [
+    ["Student", esc(studentName)],
+    ["Email", `<a href="mailto:${esc(studentEmail)}" style="color:#328cc1;font-weight:600;">${esc(studentEmail)}</a>`],
+    ["University", esc(university)],
+    ["Date", esc(date)],
+    ["Time (EST)", esc(time)],
+    ...(note ? [["Note", esc(note)] as [string, string]] : []),
+  ];
+
+  // Notify advisor
   if (advisorEmail) {
     await transporter.sendMail({
       from: `"CAPHA" <${process.env.EMAIL_USER}>`,
       to: advisorEmail,
-      subject: `New Mentorship Request — ${esc(studentName)}`,
-      html: wrapper(`
-        <h2 style="color:#0b3c5d;margin:0 0 8px;font-size:20px;">New Appointment Request</h2>
-        <p style="color:#6b7280;font-size:14px;margin:0 0 20px;">A student has requested a mentorship session with you.</p>
-        <div style="background:#f4f8fb;border-radius:12px;padding:16px 20px;">
-          ${sharedDetails}
+      subject: `New Mentorship Request — ${sanitizeHeader(studentName)} | ${date}`,
+      html: wrapper("#d9b310", `
+        <h2 style="color:#0b3c5d;margin:0 0 6px;font-size:22px;font-weight:700;">New Mentorship Request</h2>
+        <p style="color:#64748b;font-size:14px;margin:0 0 4px;">Dear ${esc(advisorName)},</p>
+        <p style="color:#64748b;font-size:14px;margin:0 0 8px;">
+          A student has submitted a mentorship session request. Please review the details below.
+        </p>
+        ${detailsBox(advisorRows)}
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:14px 18px;margin-bottom:20px;">
+          <p style="color:#92400e;font-size:13px;margin:0;">
+            This request is <strong>pending review</strong> by the CAPHA team. You will receive a separate confirmation once the booking is approved.
+          </p>
         </div>
-        <p style="color:#6b7280;font-size:13px;margin-top:20px;">
-          Please reply directly to the student at <a href="mailto:${esc(studentEmail)}" style="color:#328cc1;">${esc(studentEmail)}</a> to confirm the session.
+        <p style="color:#64748b;font-size:13px;margin:0;">
+          Best regards,<br/>
+          <strong style="color:#0b3c5d;">CAPHA Administration</strong>
         </p>
       `),
     });
   }
 
-  // Confirm to student
+  // Confirm receipt to student
   await transporter.sendMail({
     from: `"CAPHA" <${process.env.EMAIL_USER}>`,
     to: studentEmail,
-    subject: `Your CAPHA Mentorship Request is Confirmed`,
-    html: wrapper(`
-      <h2 style="color:#0b3c5d;margin:0 0 8px;font-size:20px;">We received your request!</h2>
-      <p style="color:#6b7280;font-size:14px;margin:0 0 20px;">
-        Your appointment request has been sent to <strong style="color:#0b3c5d;">${esc(advisorName)}</strong>.
-        They will reach out to confirm your session.
+    subject: `Appointment Request Received — ${sanitizeHeader(advisorName)} | ${date}`,
+    html: wrapper("#328cc1", `
+      <h2 style="color:#0b3c5d;margin:0 0 6px;font-size:22px;font-weight:700;">Request Received</h2>
+      <p style="color:#64748b;font-size:14px;margin:0 0 4px;">Dear ${esc(studentName)},</p>
+      <p style="color:#64748b;font-size:14px;margin:0 0 8px;">
+        Thank you for submitting a mentorship session request with CAPHA. We have received your request and it is currently <strong style="color:#0b3c5d;">pending review</strong>.
       </p>
-      <div style="background:#f4f8fb;border-radius:12px;padding:16px 20px;">
-        ${sharedDetails}
+      ${detailsBox(studentRows)}
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:14px 18px;margin-bottom:20px;">
+        <p style="color:#1e40af;font-size:13px;margin:0;">
+          You will receive a confirmation email once your session has been approved. Please allow 1&ndash;2 business days for a response.
+        </p>
       </div>
-      <p style="color:#6b7280;font-size:13px;margin-top:20px;">
-        If you have any questions, email us at
+      <p style="color:#64748b;font-size:13px;margin:0;">
+        If you have any questions, please contact us at
         <a href="mailto:${process.env.EMAIL_USER}" style="color:#328cc1;">${process.env.EMAIL_USER}</a>.
+      </p>
+      <p style="color:#64748b;font-size:13px;margin:16px 0 0;">
+        Best regards,<br/>
+        <strong style="color:#0b3c5d;">CAPHA Mentorship Team</strong>
       </p>
     `),
   });
+
+  // Notify all CAPHA leaders of new booking
+  const { data: allMembers } = await supabase
+    .from("team_members")
+    .select("email")
+    .not("email", "is", null)
+    .neq("email", "");
+
+  // Build deduplicated recipient list: all leader emails + org email, minus advisor (already notified)
+  const recipientSet = new Set<string>();
+  if (process.env.EMAIL_USER) recipientSet.add(process.env.EMAIL_USER);
+  for (const m of allMembers ?? []) {
+    if (m.email) recipientSet.add(m.email as string);
+  }
+  if (advisorEmail) recipientSet.delete(advisorEmail);
+
+  const adminHtml = wrapper("#d9b310", `
+    <h2 style="color:#0b3c5d;margin:0 0 6px;font-size:22px;font-weight:700;">New Booking Submitted</h2>
+    <p style="color:#64748b;font-size:14px;margin:0 0 8px;">A new mentorship appointment request requires your review.</p>
+    ${detailsBox([
+      ["Student", esc(studentName)],
+      ["Student Email", `<a href="mailto:${esc(studentEmail)}" style="color:#328cc1;">${esc(studentEmail)}</a>`],
+      ["University", esc(university)],
+      ["Advisor", `${esc(advisorName)} &mdash; ${esc(advisorRole)}`],
+      ["Date", esc(date)],
+      ["Time (EST)", esc(time)],
+      ...(note ? [["Note", esc(note)] as [string, string]] : []),
+    ])}
+    <p style="color:#64748b;font-size:13px;margin:0;">
+      Log in to the <a href="${siteUrl}/admin/bookings" style="color:#328cc1;">admin panel</a> to confirm or cancel this booking.
+    </p>
+  `);
+
+  await Promise.all(
+    Array.from(recipientSet).map((to) =>
+      transporter.sendMail({
+        from: `"CAPHA" <${process.env.EMAIL_USER}>`,
+        to,
+        subject: `[New Booking] ${sanitizeHeader(studentName)} → ${sanitizeHeader(advisorName)} on ${date}`,
+        html: adminHtml,
+      })
+    )
+  );
 }

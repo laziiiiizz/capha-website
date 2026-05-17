@@ -68,14 +68,7 @@ export default function AdminBookings() {
     }
 
     try {
-      await sendStatusEmail({
-        studentName: booking.student_name,
-        studentEmail: booking.student_email,
-        advisorName: booking.advisor_name,
-        date: booking.booking_date,
-        time: booking.booking_time,
-        status,
-      });
+      await sendStatusEmail(booking.id, status);
     } catch {
       toast.error("Status saved but email failed to send.");
     }

@@ -23,8 +23,11 @@ export interface ContactPayload {
 
 export async function sendContactMessage(data: ContactPayload) {
   // ── Rate limit: 5 submissions per IP per hour ─────────────────────────────
+  const hdrs = await headers();
   const ip =
-    (await headers()).get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+    hdrs.get("x-nf-client-connection-ip") ??
+    hdrs.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
+    "unknown";
   if (!checkRateLimit(`contact:${ip}`, 5, 60 * 60 * 1000)) {
     throw new Error("Too many requests. Please try again later.");
   }
@@ -48,8 +51,8 @@ export async function sendContactMessage(data: ContactPayload) {
   await transporter.sendMail({
     from: `"CAPHA Website" <${process.env.EMAIL_USER}>`,
     to: process.env.EMAIL_USER,
-    replyTo: email,
-    subject: `New Message from ${esc(name)}`,
+    replyTo: email.replace(/[<>"]/g, "").trim(),
+    subject: `New Message from ${email.replace(/[\r\n\t]/g, " ").trim().slice(0, 200)}`,
     html: `
       <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;background:#f4f8fb;padding:32px 16px;">
         <div style="background:#0b3c5d;padding:24px 32px;">
