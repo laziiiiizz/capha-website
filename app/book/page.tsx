@@ -1,13 +1,22 @@
+// "use client" means this component runs in the browser.
+// We need it here because the booking flow is interactive: users click through
+// steps, pick dates, and submit a form — none of which can run on the server.
+// Learn more: https://nextjs.org/docs/app/building-your-application/rendering/client-components
 "use client";
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useForm } from "react-hook-form";
+// zodResolver connects the Zod schema (defined below) to react-hook-form so
+// validation runs automatically when the user submits the form.
+// Learn more: https://zod.dev/
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Calendar, Clock, ChevronRight, ChevronLeft, CheckCircle } from "lucide-react";
+// bookAppointment is a Server Action — calling it from the browser sends a
+// secure server-side request without exposing any secrets.
 import { bookAppointment } from "./actions";
 import { createClient } from "@/lib/supabase";
 
@@ -50,12 +59,15 @@ function isoDate(d: Date): string {
 
 function friendlyDate(iso: string): string {
   if (!iso) return "";
+  // Parse parts manually to avoid UTC-to-local timezone shifting.
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("en-US", {
     month: "long", day: "numeric", year: "numeric",
   });
 }
 
+// parseFlexDate accepts several date formats the user might type (e.g. "March 10 2026",
+// "3/10/2026", "03102026") and returns a normalized YYYY-MM-DD string.
 function parseFlexDate(input: string): string | null {
   const s = input.trim();
   if (!s) return null;
@@ -96,11 +108,16 @@ function parseFlexDate(input: string): string | null {
 function buildCalendarDays(year: number, month: number): (number | null)[] {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // Fill the leading cells (before day 1) with null so the grid aligns correctly.
   const days: (number | null)[] = Array(firstDay).fill(null);
   for (let i = 1; i <= daysInMonth; i++) days.push(i);
   return days;
 }
 
+// Zod schema defines the validation rules for the booking form fields.
+// These rules run in the browser (fast feedback) and are also repeated on the
+// server inside the Server Action (security — the server never trusts client input).
+// Learn more: https://zod.dev/
 const schema = z.object({
   name: z.string().min(2, "Full name is required"),
   email: z.string().email("Enter a valid email address"),
@@ -108,9 +125,12 @@ const schema = z.object({
   note: z.string().optional(),
 });
 
+// z.infer derives a TypeScript type from the Zod schema automatically so we
+// don't have to write the type twice.
 type FormData = z.infer<typeof schema>;
 
 const todayISO = isoDate(new Date());
+// The three steps of the booking wizard shown in the progress bar at the top.
 const steps = ["Choose Advisor", "Date & Time", "Your Details"];
 
 export default function BookPage() {
@@ -132,8 +152,14 @@ export default function BookPage() {
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const calRef = useRef<HTMLDivElement>(null);
 
+  // useEffect with an empty dependency array [] runs once when the component
+  // first mounts (appears on screen). This is the standard way to load data
+  // from an API or database when a page opens.
+  // Learn more: https://react.dev/reference/react/useEffect
   useEffect(() => {
     const supabase = createClient();
+    // Fire all three queries in parallel so the page loads faster.
+    // Only advisors with booking_eligible = true are shown to students.
     Promise.all([
       supabase.from("blocked_dates").select("blocked_date"),
       supabase.from("blocked_slots").select("time_slot"),
@@ -158,7 +184,9 @@ export default function BookPage() {
     });
   }, []);
 
-  // Close calendar on outside click
+  // Close the calendar popup when the user clicks anywhere outside of it.
+  // We attach a mousedown listener to the whole document and check whether the
+  // click target is inside our calRef element or not.
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (calRef.current && !calRef.current.contains(e.target as Node)) {
@@ -166,10 +194,13 @@ export default function BookPage() {
       }
     }
     document.addEventListener("mousedown", handleClick);
+    // The cleanup function removes the listener when the component unmounts
+    // to prevent memory leaks.
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // Sync dateText when selectedDate is cleared
+  // Keep the text input in sync when selectedDate is cleared (e.g. if step resets).
+  // When a date is selected, show the friendly formatted version in the text box.
   useEffect(() => {
     if (!selectedDate) setDateText("");
     else setDateText(friendlyDate(selectedDate));
@@ -210,6 +241,9 @@ export default function BookPage() {
 
   const advisor = advisors.find((a) => a.id === selectedId);
 
+  // useForm wires up the form fields, tracks validation state, and calls onSubmit
+  // only when all Zod rules pass. errors contains field-level messages to display.
+  // Learn more: https://react-hook-form.com/
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
@@ -222,6 +256,10 @@ export default function BookPage() {
         ...data,
         advisorId: advisor.id,
         advisorName: advisor.name,
+        // advisorEmail is intentionally sent as an empty string.
+        // The server action ignores it and re-fetches the advisor's email
+        // directly from the database using advisorId. This prevents a user from
+        // injecting an arbitrary email address into the notification system.
         advisorEmail: "",
         advisorRole: advisor.role,
         date: selectedDate,
@@ -298,7 +336,7 @@ export default function BookPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-10">
-        {/* Step progress */}
+        {/* Step progress bar — visually shows which of the three steps the user is on */}
         <div className="flex items-center mb-10">
           {steps.map((label, i) => (
             <div key={label} className="flex items-center flex-1 last:flex-none">
@@ -329,6 +367,8 @@ export default function BookPage() {
           ))}
         </div>
 
+        {/* AnimatePresence + motion.div give each step a slide-in/out animation.
+            mode="wait" means the old step animates out before the new one animates in. */}
         <AnimatePresence mode="wait">
           {/* Step 0: Choose advisor */}
           {step === 0 && (
@@ -431,7 +471,7 @@ export default function BookPage() {
                 </label>
 
                 <div className="relative" ref={calRef}>
-                  {/* Text input */}
+                  {/* Text input — user can type a date in multiple formats */}
                   <input
                     id="booking-date"
                     type="text"
@@ -444,7 +484,7 @@ export default function BookPage() {
                     className="w-full border border-capha-blue/20 px-4 py-2.5 text-capha-navy text-sm focus:outline-none focus:border-capha-navy transition-colors placeholder:text-capha-dark/25"
                   />
 
-                  {/* Calendar popup */}
+                  {/* Calendar popup — shown when the input is focused */}
                   <AnimatePresence>
                     {calOpen && (
                       <motion.div
@@ -491,12 +531,14 @@ export default function BookPage() {
                           ))}
                         </div>
 
-                        {/* Days grid */}
+                        {/* Days grid — null cells are empty spacers for alignment */}
                         <div className="grid grid-cols-7 px-2 pb-2 pt-1">
                           {calDays.map((day, idx) => {
                             if (!day) return <div key={`e${idx}`} />;
                             const iso = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
                             const isPast = iso < todayISO;
+                            // Blocked dates come from the blocked_dates table in Supabase
+                            // (set by an admin) — they are shown with a strikethrough.
                             const isBlocked = blockedDates.includes(iso);
                             const isSelected = iso === selectedDate;
                             const isToday = iso === todayISO;
@@ -538,7 +580,7 @@ export default function BookPage() {
                 )}
               </div>
 
-              {/* Time slots */}
+              {/* Time slots — blocked slots (from blocked_slots table) are filtered out entirely */}
               <div className="bg-white border border-capha-blue/10 p-5 mb-6">
                 <label className="flex items-center gap-2 text-capha-navy font-semibold text-sm mb-4">
                   <Clock size={15} className="text-capha-blue" />
@@ -620,12 +662,16 @@ export default function BookPage() {
                 </div>
               </div>
 
+              {/* handleSubmit from react-hook-form runs Zod validation first;
+                  onSubmit is only called if all fields pass. */}
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div className="bg-white border border-capha-blue/10 p-5 space-y-4">
                   <div>
                     <label htmlFor="booking-name" className="block text-capha-navy text-sm font-semibold mb-1.5">Full Name</label>
                     <input
                       id="booking-name"
+                      // register() connects this input to react-hook-form so it
+                      // reads/writes the field value and tracks validation state.
                       {...register("name")}
                       placeholder="Your full name"
                       className="w-full border border-capha-blue/20 px-4 py-2.5 text-capha-navy text-sm focus:outline-none focus:border-capha-navy transition-colors placeholder:text-capha-dark/25"

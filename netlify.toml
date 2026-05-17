@@ -9,16 +9,62 @@
   # NEXT_PUBLIC_* vars are intentionally embedded in client bundles by Next.js — not secrets.
   # EMAIL_USER is the public CAPHA contact email shown on the website — not a credential.
   # EMAIL_PASS (the actual SMTP password) is server-only and never appears in source/output.
+  # SECRETS_SCAN_OMIT_KEYS tells Netlify's secret scanner to skip these known-safe values
+  # so the build doesn't fail with false-positive warnings.
+  # Learn more: https://docs.netlify.com/configure-builds/environment-variables/#secrets-scanning
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SITE_URL,EMAIL_USER"
   # supabase/ contains SQL seed files with placeholder data, not deployed application code.
   SECRETS_SCAN_OMIT_PATHS = "supabase/"
 
+# Security headers are sent with every response from the site.
+# Browsers read these to decide what content is allowed — they are the first
+# line of defense against many common web attacks.
+# Learn more: https://owasp.org/www-project-secure-headers/
 [[headers]]
   for = "/*"
   [headers.values]
+    # Prevents this site from being embedded inside an <iframe> on another domain.
+    # This blocks "clickjacking" attacks where a malicious page overlays your site
+    # invisibly to trick users into clicking things they can't see.
+    # Learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
     X-Frame-Options = "DENY"
+
+    # Stops the browser from guessing (sniffing) the content type of a response.
+    # Without this, a file uploaded as an image could be interpreted as HTML or
+    # JavaScript if it contains code, which could lead to script execution.
+    # Learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options
     X-Content-Type-Options = "nosniff"
+
+    # Controls how much referrer information is included in outbound links.
+    # "strict-origin-when-cross-origin" sends the full path only to same-origin
+    # requests, and only the domain (not path) to external sites — protecting
+    # any URL path that might contain user data.
+    # Learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+    # HTTP Strict Transport Security (HSTS) tells browsers to always use HTTPS
+    # for this domain, even if the user types "http://". max-age=63072000 is 2 years.
+    # preload means the domain can be added to browser preload lists (always HTTPS
+    # before the first visit). includeSubDomains applies the rule to all subdomains.
+    # Learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security
     Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+
+    # Permissions-Policy restricts access to powerful browser features.
+    # Empty () means no origin (including this page itself) can use that feature.
+    # This prevents a compromised third-party script from secretly accessing your
+    # camera, microphone, or location.
+    # Learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+    # Content Security Policy (CSP) is a whitelist of where the browser is allowed
+    # to load scripts, styles, images, fonts, and make network requests from.
+    # Anything not listed here is blocked — even if an attacker injects a tag.
+    #   default-src 'self'           — only load resources from this same domain by default
+    #   script-src 'unsafe-inline'   — allow inline <script> tags (needed by Next.js)
+    #   style-src fonts.googleapis   — allow Google Fonts stylesheets
+    #   font-src fonts.gstatic.com   — allow Google Fonts font files
+    #   img-src data: https:         — allow images from any HTTPS source and data: URIs
+    #   connect-src *.supabase.co    — allow API calls to Supabase
+    #   frame-ancestors 'none'       — same effect as X-Frame-Options: DENY (belt and suspenders)
+    # Learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
     Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co; frame-ancestors 'none';"

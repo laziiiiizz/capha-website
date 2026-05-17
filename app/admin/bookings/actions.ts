@@ -1,9 +1,14 @@
+// "use server" means every exported function here runs only on the server.
+// This file handles admin actions — sending confirmation/cancellation emails
+// after an admin approves or rejects a booking in the dashboard.
+// Learn more: https://nextjs.org/docs/app/building-your-application/data-fetching/server-actions-and-mutations
 "use server";
 
 import nodemailer from "nodemailer";
 import { requireAuth } from "@/lib/auth-guard";
 import { createClient } from "@/lib/supabase-server";
 
+// HTML-escapes user data before embedding it in email bodies to prevent XSS.
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -13,10 +18,16 @@ function esc(s: string): string {
     .replace(/'/g, "&#x27;");
 }
 
+// Removes \r \n \t from strings used in email Subject/From/To headers to prevent
+// email header injection attacks.
+// Learn more: https://owasp.org/www-community/attacks/Email_Header_Injection
 function sanitizeHeader(s: string): string {
   return s.replace(/[\r\n\t]/g, " ").trim().slice(0, 200);
 }
 
+// The nodemailer transporter is created once at module level (outside the function)
+// so it is reused across calls instead of being recreated on every email send.
+// Learn more: https://nodemailer.com/about/
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
@@ -24,6 +35,8 @@ const transporter = nodemailer.createTransport({
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://capha.net";
 
+// Shared email layout wrapper. accentColor is the thin stripe under the header
+// (green for confirmed, red for cancelled). body is the inner HTML content.
 const wrap = (accentColor: string, body: string) => `
   <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background:#f1f5f9;padding:32px 16px;">
     <div style="background:#0b3c5d;padding:26px 36px;border-radius:8px 8px 0 0;">
@@ -45,6 +58,8 @@ const wrap = (accentColor: string, body: string) => `
   </div>
 `;
 
+// detailsBox renders a list of [label, value] pairs as a styled HTML table.
+// Each row gets a bottom border except the last one (checked with the index i).
 const detailsBox = (rows: [string, string][]) => `
   <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 20px;margin:20px 0;">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
@@ -59,8 +74,15 @@ const detailsBox = (rows: [string, string][]) => `
 `;
 
 export async function sendStatusEmail(bookingId: string, status: "confirmed" | "cancelled") {
+  // requireAuth throws an error if there is no valid admin session, which stops
+  // the function immediately. This prevents any unauthenticated caller (e.g. a
+  // crafted HTTP request) from triggering email sends or reading booking data.
   await requireAuth();
 
+  // We fetch the booking from the database using the bookingId rather than
+  // accepting the booking details as function arguments. This means an admin
+  // cannot manipulate names, emails, or dates by passing crafted values —
+  // the email content always reflects what is actually stored in the database.
   const supabase = await createClient();
   const { data: b } = await supabase
     .from("bookings")
@@ -92,6 +114,7 @@ export async function sendStatusEmail(bookingId: string, status: "confirmed" | "
   ];
 
   if (status === "confirmed") {
+    // Always email the student first — this is the most important notification.
     await transporter.sendMail({
       from: `"CAPHA" <${process.env.EMAIL_USER}>`,
       to: studentEmail,
@@ -119,6 +142,8 @@ export async function sendStatusEmail(bookingId: string, status: "confirmed" | "
       `),
     });
 
+    // Only email the advisor if they have an email address in the database.
+    // Some team members may be added without an email, so we guard against null.
     if (advisorEmail) {
       await transporter.sendMail({
         from: `"CAPHA" <${process.env.EMAIL_USER}>`,
@@ -144,6 +169,7 @@ export async function sendStatusEmail(bookingId: string, status: "confirmed" | "
       });
     }
   } else {
+    // Cancellation path — notify the student their booking was cancelled.
     await transporter.sendMail({
       from: `"CAPHA" <${process.env.EMAIL_USER}>`,
       to: studentEmail,
@@ -171,6 +197,7 @@ export async function sendStatusEmail(bookingId: string, status: "confirmed" | "
       `),
     });
 
+    // Also notify the advisor so they know the session is off.
     if (advisorEmail) {
       await transporter.sendMail({
         from: `"CAPHA" <${process.env.EMAIL_USER}>`,
