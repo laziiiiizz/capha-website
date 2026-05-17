@@ -1,4 +1,4 @@
--- Run this in your Supabase SQL Editor
+-- Supabase SQL Editor
 
 -- Booking requests from students
 create table if not exists bookings (

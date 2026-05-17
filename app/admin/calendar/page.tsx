@@ -1,13 +1,9 @@
-// "use client" means this component runs in the browser, not on the server.
-// It can use React state, event handlers, and browser APIs (like document).
-// Learn more: https://nextjs.org/docs/app/building-your-application/rendering/client-components
+// runs in browser — uses state and supabase client queries
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
-// toast() shows a small pop-up notification in the corner of the screen —
-// much friendlier than alert() for confirming that an action succeeded or failed.
-// Learn more: https://sonner.emilkowal.ski/
+// small popup notification — better than alert()
 import { toast } from "sonner";
 import {
   Ban, Trash2, Calendar, Clock, ToggleLeft, ToggleRight, Loader2, XCircle, CheckCircle2,
@@ -17,8 +13,7 @@ type Member = {
   id: string;
   name: string;
   role: string;
-  // booking_eligible is a boolean flag in the database that controls whether
-  // a team member appears in the booking flow for students.
+  // controls if this member shows up in student booking flow
   booking_eligible: boolean;
 };
 
@@ -58,16 +53,9 @@ export default function AdminCalendar() {
   const supabase = createClient();
   const today = new Date().toISOString().split("T")[0];
 
-  // useCallback gives fetchAll a stable identity across re-renders so that the
-  // useEffect below (which lists fetchAll as a dependency) doesn't re-run on
-  // every render. Without useCallback a new function reference would be created
-  // each render, causing an infinite loop.
-  // Learn more: https://react.dev/reference/react/useCallback
+  // stable function ref so useEffect doesn't re-run every render (avoids infinite loop)
   const fetchAll = useCallback(async () => {
-    // Promise.all fires all four database queries at the same time (in parallel)
-    // rather than one after another. The page loads as fast as the slowest query
-    // instead of waiting for all four in sequence.
-    // Learn more: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all
+    // 4 queries at once — members, confirmed bookings, blocked dates, blocked slots
     const [{ data: mData }, { data: bookings }, { data: dates }, { data: slots }] = await Promise.all([
       supabase.from("team_members").select("id,name,role,booking_eligible").order("display_order"),
       supabase.from("bookings").select("id,advisor_name,student_name,booking_date,booking_time,status").eq("status", "confirmed").order("booking_date"),
@@ -81,9 +69,7 @@ export default function AdminCalendar() {
     setLoading(false);
   }, [supabase]);
 
-  // useEffect runs fetchAll once when the page first loads (and again any time
-  // fetchAll changes identity, which is rare thanks to useCallback).
-  // Learn more: https://react.dev/reference/react/useEffect
+  // runs fetchAll once on mount
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const selected = members.find((m) => m.id === selectedId) ?? null;
@@ -92,9 +78,7 @@ export default function AdminCalendar() {
     setSelectedId(id);
   };
 
-  // toggleEligibility flips the booking_eligible flag for the selected member.
-  // When true, the member appears in the student booking flow.
-  // When false, they are hidden — students cannot book sessions with them.
+  // flips booking_eligible in supabase — true = students can book them
   const toggleEligibility = async () => {
     if (!selectedId || !selected) return;
     const enabling = !selected.booking_eligible;
@@ -106,7 +90,6 @@ export default function AdminCalendar() {
       .eq("id", selectedId);
     if (error) toast.error("Failed to update eligibility.");
     else {
-      // Show a toast notification so the admin gets instant visual feedback.
       toast.success(enabling ? `${selected.name} is now accepting bookings.` : `${selected.name} removed from bookings.`);
       fetchAll();
     }
@@ -120,8 +103,7 @@ export default function AdminCalendar() {
       .from("blocked_dates")
       .insert({ blocked_date: newDate, reason: newReason.trim() || null });
     if (error) {
-      // The database has a unique constraint on blocked_date — check if that
-      // is the cause so we can show a friendlier message than the raw DB error.
+      // unique constraint on blocked_date — check message to show friendlier error
       toast.error(error.message.includes("unique") ? "Already blocked." : "Failed to block date.");
     } else {
       toast.success("Date blocked — no bookings on this day.");
@@ -133,8 +115,7 @@ export default function AdminCalendar() {
   const removeDate = async (id: string) => {
     const { error } = await supabase.from("blocked_dates").delete().eq("id", id);
     if (error) { toast.error("Failed."); return; }
-    // Optimistically remove the date from local state immediately rather than
-    // waiting for a full re-fetch, so the UI feels instant.
+    // remove from local state immediately so UI feels instant
     setBlockedDates((prev) => prev.filter((d) => d.id !== id));
     toast.success("Date unblocked.");
   };
@@ -155,20 +136,14 @@ export default function AdminCalendar() {
   };
 
   const formatDate = (iso: string) => {
-    // Parse the date parts manually to avoid timezone shifting.
-    // new Date("2026-05-17") is treated as UTC midnight and can display as the
-    // previous day in timezones west of UTC. Splitting and passing year/month/day
-    // to the Date constructor uses local time, which is what we want here.
+    // manual parse avoids timezone shift — new Date("YYYY-MM-DD") is UTC midnight
     const [y, m, d] = iso.split("-");
     return new Date(+y, +m - 1, +d).toLocaleDateString("en-US", {
       weekday: "short", month: "long", day: "numeric", year: "numeric",
     });
   };
 
-  // Build a Set of time slots that are already taken by confirmed bookings.
-  // Using a Set makes the .has() lookup in the JSX below O(1) (instant) even
-  // if there are many bookings.
-  // Learn more: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set
+  // Set from confirmed bookings — .has() used in JSX below to mark slots as taken
   const bookedSlots = new Set(confirmedBookings.map((b) => b.booking_time));
 
   return (
@@ -415,8 +390,6 @@ export default function AdminCalendar() {
           <div className="grid grid-cols-2 gap-2">
             {ALL_SLOTS.map((slot) => {
               const blocked = blockedSlots.includes(slot);
-              // bookedSlots is a Set built from confirmed bookings above — this
-              // check tells us if this slot has a real confirmed appointment.
               const booked = bookedSlots.has(slot);
               const toggling = togglingSlot === slot;
               return (
